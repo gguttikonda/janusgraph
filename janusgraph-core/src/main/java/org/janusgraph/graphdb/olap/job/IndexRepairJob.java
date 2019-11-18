@@ -33,6 +33,7 @@ import org.janusgraph.graphdb.database.management.RelationTypeIndexWrapper;
 import org.janusgraph.graphdb.internal.InternalRelation;
 import org.janusgraph.graphdb.internal.InternalRelationType;
 import org.janusgraph.graphdb.olap.QueryContainer;
+import org.janusgraph.graphdb.olap.VertexJobConverter;
 import org.janusgraph.graphdb.olap.VertexScanJob;
 import org.janusgraph.graphdb.relations.EdgeDirection;
 import org.janusgraph.graphdb.types.CompositeIndexType;
@@ -177,8 +178,8 @@ public class IndexRepairJob extends IndexUpdateJob implements VertexScanJob {
                 } else {
                     assert indexType.isMixedIndex();
                     for (JanusGraphElement element : elements) {
-                        indexSerializer.reindexElement(element, (MixedIndexType) indexType, documentsPerStore);
-                        metrics.incrementCustom(DOCUMENT_UPDATES_COUNT);
+                        if(indexSerializer.reindexElement(element, (MixedIndexType) indexType, documentsPerStore))
+                            metrics.incrementCustom(DOCUMENT_UPDATES_COUNT);
                     }
                 }
 
@@ -206,6 +207,8 @@ public class IndexRepairJob extends IndexUpdateJob implements VertexScanJob {
             throw new JanusGraphException(e.getMessage(), e);
         } finally {
             super.workerIterationEnd(metrics);
+            log.info("Index {} metrics success {} doc-updates {}", index.name(),
+                    metrics.get(ScanMetrics.Metric.SUCCESS), metrics.getCustom(DOCUMENT_UPDATES_COUNT));
         }
     }
 

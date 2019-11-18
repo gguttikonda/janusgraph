@@ -24,6 +24,7 @@ import org.janusgraph.diskstorage.util.BufferUtil;
 import org.janusgraph.diskstorage.util.RecordIterator;
 import org.janusgraph.diskstorage.util.StaticArrayEntry;
 import org.janusgraph.diskstorage.util.StaticArrayEntryList;
+import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.janusgraph.util.system.Threads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,8 +43,7 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
     private static final Logger log =
             LoggerFactory.getLogger(StandardScannerExecutor.class);
 
-    private static final int QUEUE_SIZE = 1000;
-    private static final int TIMEOUT_MS = 180000; // 60 seconds
+    private static final int TIMEOUT_MS = 1800000; // 30 mins
     private static final int TIME_PER_TRY = 10; // 10 milliseconds
     private static final int MAX_KEY_LENGTH = 128; //in bytes
 
@@ -84,12 +84,14 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
 
     }
 
-    private DataPuller addDataPuller(SliceQuery sq, StoreTransaction stx) throws BackendException {
-        final BlockingQueue<SliceResult> queue = new LinkedBlockingQueue<>(QUEUE_SIZE);
+    private DataPuller addDataPuller(SliceQuery sq, StoreTransaction stx, ScanMetrics metrics, int pos) throws BackendException {
+        
+        final BlockingQueue<SliceResult> queue = new LinkedBlockingQueue<>(this.graphConfiguration.get(GraphDatabaseConfiguration.PAGE_SIZE));
         dataQueues.add(queue);
 
         DataPuller dp = new DataPuller(sq, queue,
-                KCVSUtil.getKeys(store,sq,storeFeatures,MAX_KEY_LENGTH,stx),job.getKeyFilter());
+                KCVSUtil.getKeys(store,sq,storeFeatures,MAX_KEY_LENGTH,stx),job.getKeyFilter(), metrics, pos);
+        dp.setName("data-puller-"+ pos);
         dp.start();
         return dp;
     }
@@ -118,7 +120,7 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
             pullThreads = new DataPuller[numQueries];
 
             for (int pos = 0; pos< numQueries; pos++) {
-                pullThreads[pos]=addDataPuller(queries.get(pos),storeTx);
+                pullThreads[pos]=addDataPuller(queries.get(pos),storeTx, metrics, pos);
             }
         }  catch (Throwable e) {
             log.error("Exception trying to setup the job:", e);
@@ -128,7 +130,8 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
             return;
         }
 
-        BlockingQueue<Row> processorQueue = new LinkedBlockingQueue<>(QUEUE_SIZE);
+        BlockingQueue<Row> processorQueue = new LinkedBlockingQueue<>(
+                this.graphConfiguration.get(GraphDatabaseConfiguration.PAGE_SIZE) * numProcessors * numQueries);
 
         Processor[] processors = new Processor[numProcessors];
         for (int i=0;i<processors.length;i++) {
@@ -141,6 +144,7 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
             while (!interrupted) {
                 for (int i = 0; i < numQueries; i++) {
                     if (currentResults[i]!=null) continue;
+                    
                     BlockingQueue<SliceResult> queue = dataQueues.get(i);
 
                     SliceResult qr = queue.poll(TIME_PER_TRY,TimeUnit.MILLISECONDS); //Try very short time to see if we are done
@@ -150,9 +154,10 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
                         while (!pullThreads[i].isFinished() && retryCount < TIMEOUT_MS / TIME_PER_TRY && qr == null) {
                             retryCount ++;
                             qr = queue.poll(TIME_PER_TRY, TimeUnit.MILLISECONDS);
+                            
                         }
                         if (qr==null && !pullThreads[i].isFinished())
-                            throw new TemporaryBackendException("Timed out waiting for next row data - storage error likely");
+                            throw new TemporaryBackendException("Timed out waiting for next row data - storage error likely. Retried "+ retryCount)  ;
                     }
                     currentResults[i]=qr;
                 }
@@ -268,7 +273,6 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
         private Processor(ScanJob job, BlockingQueue<Row> processorQueue) {
             this.job = job;
             this.processorQueue = processorQueue;
-
             this.finished = false;
             this.numProcessed = 0;
         }
@@ -279,7 +283,7 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
                 job.workerIterationStart(jobConfiguration, graphConfiguration, metrics);
                 while (!finished || !processorQueue.isEmpty()) {
                     Row row;
-                    while ((row=processorQueue.poll(100,TimeUnit.MILLISECONDS))!=null) {
+                    while ((row=processorQueue.poll(10,TimeUnit.MILLISECONDS))!=null) {
                         if (numProcessed>=workBlockSize) {
                             //Setup new chunk of work
                             job.workerIterationEnd(metrics);
@@ -319,15 +323,20 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
         private final SliceQuery query;
         private final Predicate<StaticBuffer> keyFilter;
         private volatile boolean finished;
+        private final ScanMetrics metrics;
+        private final int pos;
 
         private DataPuller(SliceQuery query, BlockingQueue<SliceResult> queue,
-                           KeyIterator keyIterator, Predicate<StaticBuffer> keyFilter) {
+                           KeyIterator keyIterator, Predicate<StaticBuffer> keyFilter, ScanMetrics metrics, int pos) {
             this.query = query;
             this.queue = queue;
             this.keyIterator = keyIterator;
             this.keyFilter = keyFilter;
             this.finished = false;
+            this.metrics = metrics;
+            this.pos = pos;
         }
+        
 
         @Override
         public void run() {
@@ -335,6 +344,7 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
                 while (keyIterator.hasNext()) {
                     StaticBuffer key = keyIterator.next();
                     RecordIterator<Entry> entries = keyIterator.getEntries();
+                    metrics.incrementCustom("data-puller-"+pos);
                     if (!keyFilter.test(key)) continue;
                     EntryList entryList = StaticArrayEntryList.ofStaticBuffer(entries, StaticArrayEntry.ENTRY_GETTER);
                     queue.put(new SliceResult(query, key, entryList));
@@ -374,6 +384,3 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
 
 
 }
-
-
-

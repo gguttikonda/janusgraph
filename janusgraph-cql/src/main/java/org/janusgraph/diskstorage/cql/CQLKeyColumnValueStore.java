@@ -51,10 +51,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import com.datastax.driver.core.PagingState;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.EntryList;
@@ -73,9 +73,12 @@ import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.util.StaticArrayBuffer;
 import org.janusgraph.diskstorage.util.StaticArrayEntry.GetColVal;
 import org.janusgraph.diskstorage.util.StaticArrayEntryList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.datastax.driver.core.DataType;
 import com.datastax.driver.core.Metadata;
+import com.datastax.driver.core.PagingState;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
@@ -100,7 +103,7 @@ import io.vavr.control.Try;
  * An implementation of {@link KeyColumnValueStore} which stores the data in a CQL connected backend.
  */
 public class CQLKeyColumnValueStore implements KeyColumnValueStore {
-
+    private static final Logger log = LoggerFactory.getLogger(CQLKeyColumnValueStore.class);
     private static final String TTL_FUNCTION_NAME = "ttl";
     private static final String WRITETIME_FUNCTION_NAME = "writetime";
 
@@ -420,10 +423,11 @@ public class CQLKeyColumnValueStore implements KeyColumnValueStore {
      * it is initialized to the correct offset using the last page's metadata.
      */
     private class CQLPagingIterator implements Iterator<Row> {
-
+        
         private ResultSet currentResultSet;
 
         private int index;
+        private AtomicLong recordCount = new AtomicLong();
         private int paginatedResultSize;
         private final Supplier<Statement> statementSupplier;
 
@@ -446,11 +450,12 @@ public class CQLKeyColumnValueStore implements KeyColumnValueStore {
             if(index == paginatedResultSize) {
                 currentResultSet = getResultSet();
                 this.index = 0;
+                log.debug("CQL records from {} pulled {}", Thread.currentThread().getName(), recordCount.get());
             }
             this.index++;
+            recordCount.incrementAndGet();
             lastPagingState = currentResultSet.getExecutionInfo().getPagingState();
-            return currentResultSet.one();
-
+            return  currentResultSet.one();
         }
 
         private ResultSet getResultSet() {
