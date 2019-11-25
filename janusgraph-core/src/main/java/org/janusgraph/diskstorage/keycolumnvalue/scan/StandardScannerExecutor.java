@@ -44,7 +44,7 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
     private static final Logger log =
             LoggerFactory.getLogger(StandardScannerExecutor.class);
 
-    private static final int TIMEOUT_MS = 1800000; // 30 mins
+    private static final int TIMEOUT_MS = 180000; // 3 mins
     private static final int TIME_PER_TRY = 10; // 10 milliseconds
     private static final int MAX_KEY_LENGTH = 128; //in bytes
 

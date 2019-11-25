@@ -434,7 +434,7 @@ public class AstyanaxKeyColumnValueStore implements KeyColumnValueStore {
 
         @Override
         public boolean isExhausted() {
-            return hasNext();
+            return !hasNext();
         }
         
         @Override
