@@ -364,7 +364,7 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
                         if(job instanceof VertexJobConverter && lastKey != null) {
                             VertexJobConverter vjc = (VertexJobConverter)job;
                             long vertexId = vjc.getVertexId(lastKey);
-                            log.info("super vertex {} time {} entries size {}  ", vertexId, (end - start), entryList.size());
+                            log.info("super vertex {} time {}", vertexId, (end - start));
                         }
                     }
                     

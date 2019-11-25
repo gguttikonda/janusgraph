@@ -853,10 +853,10 @@ public class ManagementSystem implements JanusGraphManagement {
                 } else {
                     JanusGraphIndex graphIndex = (JanusGraphIndex) index;
                     if (graphIndex.isMixedIndex())
-                        throw new UnsupportedOperationException("External mixed indexes must be removed in the indexing system directly.");
+                        throw new UnsupportedOperationException("Externalcrh mixed indexes must be removed in the indexing system directly.");
                     builder = graph.getBackend().buildGraphIndexScanJob();
                 }
-                builder.setFinishJob(indexId.getIndexJobFinisher(graph, SchemaAction.REMOVE_INDEX));
+                builder.setFinishJob(indexId.getIndexJobFinisher());
                 builder.setJobId(indexId);
                 builder.setJob(new IndexRemoveJob(graph, indexId.indexName, indexId.relationTypeName));
                 try {
