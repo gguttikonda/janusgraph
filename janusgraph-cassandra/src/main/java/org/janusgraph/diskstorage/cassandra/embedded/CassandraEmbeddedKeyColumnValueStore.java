@@ -347,7 +347,7 @@ public class CassandraEmbeddedKeyColumnValueStore implements KeyColumnValueStore
         
         @Override
         public boolean isExhausted() {
-            return hasNext();
+            return !hasNext();
         }
 
         @Override
