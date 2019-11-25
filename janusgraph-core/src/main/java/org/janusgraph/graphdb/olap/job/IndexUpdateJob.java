@@ -23,6 +23,7 @@ import org.janusgraph.diskstorage.configuration.ConfigNamespace;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
+import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics.Metric;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.janusgraph.graphdb.database.StandardJanusGraph;
 import org.janusgraph.graphdb.database.management.ManagementSystem;
@@ -139,6 +140,10 @@ public abstract class IndexUpdateJob {
             log.error("Transaction commit threw runtime exception:", e);
             metrics.incrementCustom(FAILED_TX);
             throw e;
+        }finally {
+            log.info("Index {} metrics success-tx {} doc-updates  {} success {}", indexName,
+                    metrics.getCustom(SUCCESS_TX), metrics.getCustom(IndexRepairJob.DOCUMENT_UPDATES_COUNT),
+                    metrics.get(Metric.SUCCESS));
         }
     }
 

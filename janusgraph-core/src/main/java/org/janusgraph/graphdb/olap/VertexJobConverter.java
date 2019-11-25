@@ -176,7 +176,8 @@ public class VertexJobConverter implements ScanJob {
         return new VertexJobConverter(this);
     }
 
-    protected long getVertexId(StaticBuffer key) {
+    //Made public only for debugging purposes!
+    public long getVertexId(StaticBuffer key) {
         return idManager.getKeyID(key);
     }
 

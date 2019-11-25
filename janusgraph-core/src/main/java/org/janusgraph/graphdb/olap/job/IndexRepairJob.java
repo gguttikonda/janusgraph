@@ -207,8 +207,6 @@ public class IndexRepairJob extends IndexUpdateJob implements VertexScanJob {
             throw new JanusGraphException(e.getMessage(), e);
         } finally {
             super.workerIterationEnd(metrics);
-            log.info("Index {} metrics success {} doc-updates {}", index.name(),
-                    metrics.get(ScanMetrics.Metric.SUCCESS), metrics.getCustom(DOCUMENT_UPDATES_COUNT));
         }
     }
 

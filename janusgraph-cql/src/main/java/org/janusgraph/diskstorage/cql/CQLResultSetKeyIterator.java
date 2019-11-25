@@ -24,7 +24,6 @@ import org.janusgraph.diskstorage.util.RecordIterator;
 import org.janusgraph.diskstorage.util.StaticArrayBuffer;
 import org.janusgraph.diskstorage.util.StaticArrayEntry;
 
-import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.google.common.collect.AbstractIterator;
 
@@ -39,7 +38,6 @@ import io.vavr.collection.Iterator;
  * to the number of Columns specified in the {@link SliceQuery}s limit.
  */
 class CQLResultSetKeyIterator extends AbstractIterator<StaticBuffer> implements KeyIterator {
-
     private final SliceQuery sliceQuery;
     private final CQLColValGetter getter;
     private final Iterator<Row> iterator;
@@ -47,6 +45,8 @@ class CQLResultSetKeyIterator extends AbstractIterator<StaticBuffer> implements 
     private Row currentRow = null;
     private StaticBuffer currentKey = null;
     private StaticBuffer lastKey = null;
+    private boolean isExhausted = false; //by default false
+    
 
     CQLResultSetKeyIterator(final SliceQuery sliceQuery, final CQLColValGetter getter, final Iterable<Row> resultSet) {
         this.sliceQuery = sliceQuery;
@@ -57,14 +57,20 @@ class CQLResultSetKeyIterator extends AbstractIterator<StaticBuffer> implements 
                     this.currentKey = StaticArrayBuffer.of(row.getBytes(CQLKeyColumnValueStore.KEY_COLUMN_NAME));
                 });
     }
+   
 
     @Override
+    public boolean isExhausted() {
+        return isExhausted;
+    }
+    
+    @Override
     protected StaticBuffer computeNext() {
+
         if (this.currentKey != null && !this.currentKey.equals(this.lastKey)) {
             this.lastKey = this.currentKey;
             return this.lastKey;
         }
-
         while (this.iterator.hasNext()) {
             this.iterator.next();
             if (this.currentKey != null && !this.currentKey.equals(this.lastKey)) {
@@ -72,7 +78,10 @@ class CQLResultSetKeyIterator extends AbstractIterator<StaticBuffer> implements 
                 return this.lastKey;
             }
         }
+        
+        isExhausted = true;
         return endOfData();
+
     }
 
     @Override

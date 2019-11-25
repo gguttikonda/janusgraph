@@ -301,6 +301,11 @@ public class HBaseKeyColumnValueStore implements KeyColumnValueStore {
             ensureOpen();
             return rows.hasNext();
         }
+        
+        @Override
+        public boolean isExhausted() {
+            return !hasNext();
+        }
 
         @Override
         public StaticBuffer next() {

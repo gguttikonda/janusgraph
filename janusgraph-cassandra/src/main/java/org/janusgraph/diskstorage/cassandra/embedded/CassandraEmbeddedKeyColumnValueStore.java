@@ -344,6 +344,11 @@ public class CassandraEmbeddedKeyColumnValueStore implements KeyColumnValueStore
                 throw new RuntimeException(e);
             }
         }
+        
+        @Override
+        public boolean isExhausted() {
+            return hasNext();
+        }
 
         @Override
         public StaticBuffer next() {

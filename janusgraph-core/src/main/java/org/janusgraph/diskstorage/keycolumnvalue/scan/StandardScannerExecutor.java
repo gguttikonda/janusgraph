@@ -25,6 +25,7 @@ import org.janusgraph.diskstorage.util.RecordIterator;
 import org.janusgraph.diskstorage.util.StaticArrayEntry;
 import org.janusgraph.diskstorage.util.StaticArrayEntryList;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
+import org.janusgraph.graphdb.olap.VertexJobConverter;
 import org.janusgraph.util.system.Threads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,7 +91,7 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
         dataQueues.add(queue);
 
         DataPuller dp = new DataPuller(sq, queue,
-                KCVSUtil.getKeys(store,sq,storeFeatures,MAX_KEY_LENGTH,stx),job.getKeyFilter(), metrics, pos);
+                KCVSUtil.getKeys(store,sq,storeFeatures,MAX_KEY_LENGTH,stx),job.getKeyFilter(), metrics, pos, job);
         dp.setName("data-puller-"+ pos);
         dp.start();
         return dp;
@@ -151,12 +152,13 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
                     if (qr==null) {
                         if (pullThreads[i].isFinished()) continue; //No more data to be expected
                         int retryCount = 0;
-                        while (!pullThreads[i].isFinished() && retryCount < TIMEOUT_MS / TIME_PER_TRY && qr == null) {
+                        DataPuller dataPuller = pullThreads[i];
+                        
+                        while (!pullThreads[i].isFinished() && !dataPuller.isExhausted() && qr == null) {
                             retryCount ++;
                             qr = queue.poll(TIME_PER_TRY, TimeUnit.MILLISECONDS);
-                            
                         }
-                        if (qr==null && !pullThreads[i].isFinished())
+                        if (qr == null && !pullThreads[i].isFinished())
                             throw new TemporaryBackendException("Timed out waiting for next row data - storage error likely. Retried "+ retryCount)  ;
                     }
                     currentResults[i]=qr;
@@ -325,9 +327,10 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
         private volatile boolean finished;
         private final ScanMetrics metrics;
         private final int pos;
+        private final ScanJob job ;
 
         private DataPuller(SliceQuery query, BlockingQueue<SliceResult> queue,
-                           KeyIterator keyIterator, Predicate<StaticBuffer> keyFilter, ScanMetrics metrics, int pos) {
+                           KeyIterator keyIterator, Predicate<StaticBuffer> keyFilter, ScanMetrics metrics, int pos, ScanJob job) {
             this.query = query;
             this.queue = queue;
             this.keyIterator = keyIterator;
@@ -335,12 +338,19 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
             this.finished = false;
             this.metrics = metrics;
             this.pos = pos;
+            this.job = job ;
         }
         
-
+        public boolean isExhausted() {
+            return keyIterator.isExhausted();
+        }
+        
+        
         @Override
         public void run() {
             try {
+                StaticBuffer lastKey = null;
+                long start = System.currentTimeMillis();
                 while (keyIterator.hasNext()) {
                     StaticBuffer key = keyIterator.next();
                     RecordIterator<Entry> entries = keyIterator.getEntries();
@@ -348,7 +358,20 @@ class StandardScannerExecutor extends AbstractFuture<ScanMetrics> implements Jan
                     if (!keyFilter.test(key)) continue;
                     EntryList entryList = StaticArrayEntryList.ofStaticBuffer(entries, StaticArrayEntry.ENTRY_GETTER);
                     queue.put(new SliceResult(query, key, entryList));
+                    long end = System.currentTimeMillis();
+                    
+                    if ((end - start) > 1000 && this.pos == 0) {// greater than a second ? log it
+                        if(job instanceof VertexJobConverter && lastKey != null) {
+                            VertexJobConverter vjc = (VertexJobConverter)job;
+                            long vertexId = vjc.getVertexId(lastKey);
+                            log.info("super vertex {} time {} entries size {}  ", vertexId, (end - start), entryList.size());
+                        }
+                    }
+                    
+                    start = System.currentTimeMillis();
+                    lastKey = key ;
                 }
+                
                 finished = true;
             } catch (InterruptedException e) {
                 log.error("Data-pulling thread interrupted while waiting on queue or data", e);

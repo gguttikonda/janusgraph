@@ -67,6 +67,11 @@ public class MetricInstrumentedIterator implements KeyIterator {
         this.iterator = i;
         this.p = p;
     }
+    
+    @Override
+    public boolean isExhausted() {
+        return !hasNext();
+    }
 
     @Override
     public boolean hasNext() {
